@@ -1,0 +1,344 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>A* Rover Step Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: instrument console. Map canvas on the left, live algorithm state on the right; stacks on phones. */
+:root{
+  --bg:#eef0f3; --panel:#ffffff; --ink:#1b2230; --muted:#5d6779; --line:#d5dae2;
+  --ground:#e7dccd; --sand:#d9b47c; --rock:#a86a4a; --wall:#3a3330;
+  --open:#7fb6e8; --closed:#c9d3e0; --path:#0a8fa8; --cur:#e0a100; --start:#1f9d55; --goal:#c23a3a;
+  --accent:#0a8fa8;
+  --f-display:"Archivo",system-ui,sans-serif; --f-body:"Archivo",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12161d; --panel:#1a2029; --ink:#e6e9ef; --muted:#97a1b3; --line:#2b3340;
+  --ground:#4a4038; --sand:#7d6136; --rock:#8a4f34; --wall:#0b0a09;
+  --open:#2f6ea6; --closed:#2c3442; --path:#3fd0e8; --cur:#f2b90f; --start:#36c172; --goal:#ff5c5c;
+  --accent:#3fd0e8; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12161d; --panel:#1a2029; --ink:#e6e9ef; --muted:#97a1b3; --line:#2b3340;
+  --ground:#4a4038; --sand:#7d6136; --rock:#8a4f34; --wall:#0b0a09;
+  --open:#2f6ea6; --closed:#2c3442; --path:#3fd0e8; --cur:#f2b90f; --start:#36c172; --goal:#ff5c5c;
+  --accent:#3fd0e8; color-scheme:dark}
+html,body{background:var(--bg);color:var(--ink)}
+body{font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:20px 40px;display:grid;gap:16px}
+header h1{font-family:var(--f-display);font-weight:800;font-size:clamp(22px,3vw,30px);margin:0;letter-spacing:-.01em;text-wrap:balance}
+header p{margin:4px 0 0;color:var(--muted);max-width:70ch}
+.main{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.main{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;min-width:0}
+canvas{width:100%;height:auto;display:block;border-radius:4px;touch-action:none;cursor:crosshair}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+button,select{font:600 13px var(--f-body);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 12px;cursor:pointer}
+button:hover,select:hover{border-color:var(--accent)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--panel);border-color:var(--accent)}
+label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+input[type=range]{accent-color:var(--accent);width:110px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.sw{width:12px;height:12px;border-radius:2px;display:inline-block;border:1px solid var(--line)}
+.side{display:grid;gap:16px}
+h2{font:700 11px var(--f-body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stat{border:1px solid var(--line);border-radius:6px;padding:8px}
+.stat b{display:block;font:600 18px var(--f-mono);font-variant-numeric:tabular-nums}
+.stat small{color:var(--muted);font-size:11px}
+.status{margin-top:10px;font-size:13px;padding:6px 10px;border-radius:6px;background:var(--bg)}
+table{width:100%;border-collapse:collapse;font:12px var(--f-mono);font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:3px 6px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600}
+tr.top td{color:var(--accent);font-weight:600}
+.scroll{overflow:auto;max-height:220px}
+.log{font:12px/1.55 var(--f-mono);max-height:260px;overflow:auto;white-space:pre-wrap;margin:0}
+.log .ok{color:var(--start)} .log .no{color:var(--muted)} .log .hd{color:var(--cur);font-weight:600}
+.inspect{font:12px/1.6 var(--f-mono)}
+.hint{font-size:12px;color:var(--muted);margin:8px 0 0}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>A* Rover Step Explorer</h1>
+    <p>Step through A* on a small Mars-style grid. Every step pops the lowest <span class="mono">f = g + h</span> cell from the open list and relaxes its 8 neighbours, exactly like <span class="mono">planner.py</span>. Arrows show each cell's parent pointer (<span class="mono">came_from</span>).</p>
+  </header>
+
+  <div class="main">
+    <section class="card">
+      <canvas id="cv" width="960" height="640" aria-label="Terrain grid"></canvas>
+      <div class="controls">
+        <button id="step" class="primary">Step</button>
+        <button id="run">Run</button>
+        <button id="finish">Finish</button>
+        <button id="reset">Reset search</button>
+        <label for="speed">Speed <input id="speed" type="range" min="1" max="60" value="12"></label>
+      </div>
+      <div class="controls">
+        <label for="mode">Algorithm
+          <select id="mode">
+            <option value="1">A* (w = 1)</option>
+            <option value="0">Dijkstra (h = 0)</option>
+            <option value="3">Weighted A* (w = 3)</option>
+            <option value="50">Greedy (h dominates)</option>
+          </select></label>
+        <label for="hfn">Heuristic
+          <select id="hfn">
+            <option value="euclid">Euclidean</option>
+            <option value="octile">Octile</option>
+            <option value="manhattan">Manhattan (overestimates with diagonals)</option>
+          </select></label>
+        <label for="brush">Paint
+          <select id="brush">
+            <option value="1">Flat (×1)</option>
+            <option value="3">Sand (×3)</option>
+            <option value="6">Rocks (×6)</option>
+            <option value="-1">Blocked</option>
+            <option value="S">Move start</option>
+            <option value="G">Move goal</option>
+            <option value="I" selected>Inspect only</option>
+          </select></label>
+        <button id="clear">Clear map</button>
+        <button id="sample">Sample map</button>
+      </div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--ground)"></i>Flat ×1</span>
+        <span><i class="sw" style="background:var(--sand)"></i>Sand ×3</span>
+        <span><i class="sw" style="background:var(--rock)"></i>Rocks ×6</span>
+        <span><i class="sw" style="background:var(--wall)"></i>Blocked</span>
+        <span><i class="sw" style="background:var(--open)"></i>Open list</span>
+        <span><i class="sw" style="background:var(--closed)"></i>Expanded</span>
+        <span><i class="sw" style="background:var(--cur)"></i>Current</span>
+        <span><i class="sw" style="background:var(--path)"></i>Final route</span>
+      </div>
+      <p class="hint">Drag on the map to paint. Pick "Inspect only" and click a cell to see its g, h, f and parent. Step cost = distance (1 straight, √2 diagonal) × terrain multiplier.</p>
+    </section>
+
+    <aside class="side">
+      <section class="card">
+        <h2>Search state</h2>
+        <div class="stats">
+          <div class="stat"><b id="sExp">0</b><small>cells expanded</small></div>
+          <div class="stat"><b id="sOpen">1</b><small>in open list</small></div>
+          <div class="stat"><b id="sCost">–</b><small>route cost</small></div>
+        </div>
+        <div class="status" id="status">Ready. Press Step.</div>
+      </section>
+
+      <section class="card">
+        <h2>Open list (next 8 by f)</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>cell</th><th>g</th><th>h</th><th>f</th></tr></thead>
+          <tbody id="openT"></tbody>
+        </table></div>
+      </section>
+
+      <section class="card">
+        <h2>Last step</h2>
+        <pre class="log" id="log">Nothing yet.</pre>
+      </section>
+
+      <section class="card">
+        <h2>Inspected cell</h2>
+        <div class="inspect" id="insp">Click a cell with "Inspect only" selected.</div>
+      </section>
+
+      <section class="card">
+        <h2>Finished runs</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>algorithm</th><th>expanded</th><th>cost</th><th>steps</th></tr></thead>
+          <tbody id="runsT"><tr><td colspan="4" style="text-align:left;color:var(--muted)">Finish a search to compare algorithms here.</td></tr></tbody>
+        </table></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script>
+const R=16,C=24,S2=Math.SQRT2;
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const cw=cv.width/C,ch=cv.height/R;
+let cost=[],start=[8,2],goal=[8,21];
+const MOVES=[[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+const k=(r,c)=>r*C+c, rc=i=>[Math.floor(i/C),i%C];
+
+function sampleMap(){
+  cost=Array.from({length:R},()=>Array(C).fill(1));
+  // rocky ridge with a single gap at the top
+  for(let r=2;r<R;r++) cost[r][11]=-1;
+  for(let r=5;r<13;r++) cost[r][10]=6;
+  // sand field across the direct line
+  for(let r=6;r<11;r++) for(let c=13;c<19;c++) cost[r][c]=3;
+  // rocks bottom left
+  for(let r=11;r<15;r++) for(let c=3;c<8;c++) cost[r][c]=6;
+  cost[0][11]=1; cost[1][11]=3;
+  start=[8,2]; goal=[8,21];
+}
+function clearMap(){cost=Array.from({length:R},()=>Array(C).fill(1));}
+
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ---- search state ----
+let open,g,h,came,closed,cur,path,done,expanded,lastLog,W,HFN;
+function hval(a){
+  const dr=Math.abs(a[0]-goal[0]),dc=Math.abs(a[1]-goal[1]);
+  if(HFN==='manhattan') return dr+dc;
+  if(HFN==='octile') return Math.max(dr,dc)+(S2-1)*Math.min(dr,dc);
+  return Math.hypot(dr,dc);
+}
+// binary heap of [f, h, seq, idx]  (tie-break: lower h, then older)
+let seq=0;
+function push(item){open.push(item);let i=open.length-1;while(i>0){const p=(i-1)>>1;if(less(open[i],open[p])){[open[i],open[p]]=[open[p],open[i]];i=p}else break}}
+function pop(){const top=open[0],last=open.pop();if(open.length){open[0]=last;let i=0;for(;;){let l=2*i+1,r=l+1,m=i;if(l<open.length&&less(open[l],open[m]))m=l;if(r<open.length&&less(open[r],open[m]))m=r;if(m===i)break;[open[i],open[m]]=[open[m],open[i]];i=m}}return top}
+function less(a,b){return a[0]!==b[0]?a[0]<b[0]:a[1]!==b[1]?a[1]<b[1]:a[2]<b[2]}
+
+function resetSearch(){
+  W=+document.getElementById('mode').value; HFN=document.getElementById('hfn').value;
+  open=[];g=new Map();h=new Map();came=new Map();closed=new Set();cur=null;path=null;done=false;expanded=0;seq=0;
+  const s=k(...start);g.set(s,0);h.set(s,hval(start));
+  push([W*h.get(s),h.get(s),seq++,s]);
+  lastLog=[];setStatus('Ready. Press Step.');stopRun();draw();panel();
+}
+const fmt=x=>x===undefined?'–':(Math.round(x*100)/100).toString();
+const name=i=>{const[r,c]=rc(i);return `(${r},${c})`};
+
+function step(){
+  if(done) return;
+  lastLog=[];
+  while(open.length){
+    const [f,hh,_,i]=pop();
+    if(closed.has(i)){lastLog.push({t:'no',s:`pop ${name(i)} f=${fmt(f)}  stale duplicate, already expanded -> skip`});continue}
+    cur=i;closed.add(i);expanded++;
+    lastLog.push({t:'hd',s:`pop ${name(i)}  g=${fmt(g.get(i))} h=${fmt(h.get(i))} f=${fmt(f)}`});
+    if(i===k(...goal)){
+      path=[i];let x=i;while(came.has(x)){x=came.get(x);path.push(x)}path.reverse();
+      done=true;lastLog.push({t:'ok',s:`goal reached. Follow came_from back to start: ${path.length} cells, cost ${fmt(g.get(i))}`});
+      setStatus(`Route found. Cost ${fmt(g.get(i))}, ${expanded} cells expanded.`);recordRun();stopRun();draw();panel();return;
+    }
+    const[r,c]=rc(i);
+    for(const[dr,dc] of MOVES){
+      const nr=r+dr,nc=c+dc;
+      if(nr<0||nc<0||nr>=R||nc>=C) continue;
+      const n=k(nr,nc);
+      if(cost[nr][nc]<0){lastLog.push({t:'no',s:`  ${name(n)} blocked`});continue}
+      if(dr&&dc&&(cost[r+dr][c]<0||cost[r][c+dc]<0)){lastLog.push({t:'no',s:`  ${name(n)} diagonal would cut a blocked corner`});continue}
+      if(closed.has(n)){lastLog.push({t:'no',s:`  ${name(n)} already expanded`});continue}
+      const step=(dr&&dc?S2:1)*cost[nr][nc];
+      const ng=g.get(i)+step, old=g.get(n);
+      if(old===undefined||ng<old-1e-9){
+        g.set(n,ng);if(!h.has(n))h.set(n,hval([nr,nc]));came.set(n,i);
+        push([ng+W*h.get(n),h.get(n),seq++,n]);
+        lastLog.push({t:'ok',s:`  ${name(n)} new g ${fmt(ng)} ${old===undefined?'(first time)':'< old '+fmt(old)} -> came_from = ${name(i)}, push f=${fmt(ng+W*h.get(n))}`});
+      } else lastLog.push({t:'no',s:`  ${name(n)} new g ${fmt(ng)} >= old ${fmt(old)} -> ignore`});
+    }
+    setStatus(`Expanded ${name(i)}. Open list has ${open.length} entries.`);
+    draw();panel();return;
+  }
+  done=true;setStatus('Open list empty: no route exists.');stopRun();draw();panel();
+}
+
+const runs=[];
+function recordRun(){
+  const label=document.getElementById('mode').selectedOptions[0].text+' · '+HFN;
+  runs.unshift({label,exp:expanded,cost:g.get(k(...goal)),steps:path.length-1});
+  document.getElementById('runsT').innerHTML=runs.slice(0,8).map(x=>`<tr><td>${x.label}</td><td>${x.exp}</td><td>${fmt(x.cost)}</td><td>${x.steps}</td></tr>`).join('');
+}
+
+function setStatus(s){document.getElementById('status').textContent=s}
+function panel(){
+  document.getElementById('sExp').textContent=expanded;
+  document.getElementById('sOpen').textContent=open.length;
+  document.getElementById('sCost').textContent=path?fmt(g.get(k(...goal))):'–';
+  const top=[...open].filter(e=>!closed.has(e[3])).sort((a,b)=>less(a,b)?-1:1).slice(0,8);
+  document.getElementById('openT').innerHTML=top.length?top.map((e,j)=>`<tr class="${j?'':'top'}"><td>${name(e[3])}</td><td>${fmt(g.get(e[3]))}</td><td>${fmt(h.get(e[3]))}</td><td>${fmt(e[0])}</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:left">empty</td></tr>';
+  const L=document.getElementById('log');
+  L.innerHTML=lastLog.length?lastLog.map(l=>`<span class="${l.t}">${l.s}</span>`).join('\n'):'Nothing yet.';
+}
+
+function draw(){
+  const col={1:css('--ground'),3:css('--sand'),6:css('--rock'),'-1':css('--wall')};
+  const openSet=new Set(open.map(e=>e[3]));
+  ctx.clearRect(0,0,cv.width,cv.height);
+  for(let r=0;r<R;r++)for(let c=0;c<C;c++){
+    const i=k(r,c),x=c*cw,y=r*ch;
+    ctx.fillStyle=col[cost[r][c]];ctx.fillRect(x,y,cw,ch);
+    if(cost[r][c]>0&&(closed.has(i)||openSet.has(i))){
+      ctx.globalAlpha=closed.has(i)?.55:.6;ctx.fillStyle=closed.has(i)?css('--closed'):css('--open');
+      ctx.fillRect(x+3,y+3,cw-6,ch-6);ctx.globalAlpha=1;
+    }
+  }
+  ctx.strokeStyle=css('--line');ctx.lineWidth=1;ctx.globalAlpha=.6;
+  for(let r=0;r<=R;r++){ctx.beginPath();ctx.moveTo(0,r*ch);ctx.lineTo(cv.width,r*ch);ctx.stroke()}
+  for(let c=0;c<=C;c++){ctx.beginPath();ctx.moveTo(c*cw,0);ctx.lineTo(c*cw,cv.height);ctx.stroke()}
+  ctx.globalAlpha=1;
+  // parent pointers
+  ctx.strokeStyle=css('--muted');ctx.fillStyle=css('--muted');ctx.lineWidth=1.5;
+  for(const[n,p] of came){
+    const[a,b]=rc(n),[pa,pb]=rc(p);
+    const x1=b*cw+cw/2,y1=a*ch+ch/2,x2=pb*cw+cw/2,y2=pa*ch+ch/2;
+    const ex=x1+(x2-x1)*.42,ey=y1+(y2-y1)*.42;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(ex,ey);ctx.stroke();
+    const ang=Math.atan2(ey-y1,ex-x1);
+    ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(ex-6*Math.cos(ang-.5),ey-6*Math.sin(ang-.5));ctx.lineTo(ex-6*Math.cos(ang+.5),ey-6*Math.sin(ang+.5));ctx.fill();
+  }
+  if(path){
+    ctx.strokeStyle=css('--path');ctx.lineWidth=6;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();
+    path.forEach((i,j)=>{const[r,c]=rc(i);const x=c*cw+cw/2,y=r*ch+ch/2;j?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();
+  }
+  if(cur!==null&&!done){const[r,c]=rc(cur);ctx.strokeStyle=css('--cur');ctx.lineWidth=4;ctx.strokeRect(c*cw+2,r*ch+2,cw-4,ch-4)}
+  const dot=(p,color,t)=>{ctx.fillStyle=color;ctx.beginPath();ctx.arc(p[1]*cw+cw/2,p[0]*ch+ch/2,Math.min(cw,ch)*.36,0,7);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font=`700 ${Math.round(ch*.38)}px Archivo, sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(t,p[1]*cw+cw/2,p[0]*ch+ch/2+1)};
+  dot(start,css('--start'),'S');dot(goal,css('--goal'),'G');
+}
+
+// ---- run loop ----
+let timer=null;
+function stopRun(){if(timer){clearInterval(timer);timer=null}document.getElementById('run').textContent='Run'}
+document.getElementById('run').onclick=()=>{
+  if(timer){stopRun();return}
+  if(done)resetSearch();
+  document.getElementById('run').textContent='Pause';
+  timer=setInterval(step,1000/+document.getElementById('speed').value);
+};
+document.getElementById('speed').oninput=()=>{if(timer){stopRun();document.getElementById('run').click()}};
+document.getElementById('step').onclick=()=>{stopRun();step()};
+document.getElementById('finish').onclick=()=>{stopRun();let n=0;while(!done&&n++<5000)step()};
+document.getElementById('reset').onclick=resetSearch;
+document.getElementById('mode').onchange=resetSearch;
+document.getElementById('hfn').onchange=resetSearch;
+document.getElementById('clear').onclick=()=>{clearMap();resetSearch()};
+document.getElementById('sample').onclick=()=>{sampleMap();resetSearch()};
+
+// ---- painting / inspecting ----
+let painting=false;
+function cellAt(e){const b=cv.getBoundingClientRect();const c=Math.floor((e.clientX-b.left)/b.width*C),r=Math.floor((e.clientY-b.top)/b.height*R);return(r>=0&&c>=0&&r<R&&c<C)?[r,c]:null}
+function inspect(p){
+  const i=k(...p),gv=g.get(i),hv=h.has(i)?h.get(i):hval(p);
+  const t={1:'flat ×1',3:'sand ×3',6:'rocks ×6','-1':'blocked'}[cost[p[0]][p[1]]];
+  const state=closed.has(i)?'expanded (closed)':g.has(i)?'in open list':'not reached yet';
+  document.getElementById('insp').innerHTML=
+   `cell ${name(i)} · ${t}<br>state: ${state}<br>g (cost so far): ${fmt(gv)}<br>h (estimate to goal): ${fmt(hv)}<br>f = g + w·h: ${gv===undefined?'–':fmt(gv+W*hv)}<br>came_from: ${came.has(i)?name(came.get(i)):'–'}`;
+}
+function apply(e){
+  const p=cellAt(e);if(!p)return;const b=document.getElementById('brush').value;
+  if(b==='I'){inspect(p);return}
+  if(b==='S'||b==='G'){if(cost[p[0]][p[1]]<0)return;if(b==='S')start=p;else goal=p;resetSearch();return}
+  const v=+b;if((p[0]===start[0]&&p[1]===start[1])||(p[0]===goal[0]&&p[1]===goal[1]))return;
+  if(cost[p[0]][p[1]]!==v){cost[p[0]][p[1]]=v;resetSearch()}
+}
+cv.addEventListener('pointerdown',e=>{painting=true;cv.setPointerCapture(e.pointerId);apply(e)});
+cv.addEventListener('pointermove',e=>{if(painting&&!'SGI'.includes(document.getElementById('brush').value))apply(e)});
+cv.addEventListener('pointerup',()=>painting=false);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
+new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+sampleMap();resetSearch();
+// open in a working state: show the first 25 expansions
+for(let i=0;i<25;i++)step();
+</script>
+
+</body></html>
